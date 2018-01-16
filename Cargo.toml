@@ -1,0 +1,20 @@
+[package]
+name = "get-twitter-token"
+version = "0.1.0"
+authors = ["kgtkr <kgtkr.jp@gmail.com>"]
+
+license = "AGPL-3.0"
+description = "Twitterのトークン取得"
+repository = "https://github.com/kgtkr/get-twitter-token"
+readme = "README.md"
+keywords = ["twitter"]
+
+[dependencies]
+clap = "2.29"
+reqwest = "0.8.2"
+rust-crypto = "0.2"
+chrono = "0.4"
+uuid = "0.5"
+url = "0.5"
+base64 = "0.6"
+hyper = "0.11"
