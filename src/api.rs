@@ -5,7 +5,7 @@ extern crate hyper;
 extern crate reqwest;
 extern crate url;
 extern crate uuid;
-
+use std::collections::HashMap;
 use self::crypto::mac::Mac;
 use self::url::percent_encoding::utf8_percent_encode;
 use self::url::percent_encoding::FORM_URLENCODED_ENCODE_SET;
@@ -34,12 +34,12 @@ pub fn token(ck: &str, cs: &str, sn: &str, pw: &str) -> Option<(String, String)>
 
   let key = vec![url_encode(cs), "".to_string()];
 
-  let base = {
+  let base = &{
     let mut v = vec![];
-    v.extend_from_slice(&params);
     v.extend_from_slice(&oauth);
-    &v.clone()[..]
-  };
+    v.extend_from_slice(&params);
+    v
+  }[..];
 
   let base_str = &base
     .iter()
@@ -58,16 +58,22 @@ pub fn token(ck: &str, cs: &str, sn: &str, pw: &str) -> Option<(String, String)>
     v.extend_from_slice(&oauth);
     v.extend_from_slice(&[("oauth_signature", &oauth_signature)]);
     v.iter()
-      .map(|&(k, v)| format!("{}=\"{}\"", k, v))
+      .map(|&(k, v)| format!(r#"{}="{}""#, k, url_encode(v)))
       .collect::<Vec<_>>()
-      .join(",")
+      .join(", ")
   };
 
   let client = reqwest::Client::new();
   let res = client
     .post(url)
     .header(hyper::header::Authorization(format!("OAuth {}", items)))
-    .form(&params)
+    .json(&{
+      let mut map: HashMap<&str, &str> = HashMap::new();
+      for &(k, v) in &params {
+        map.insert(k, v);
+      }
+      map
+    })
     .send();
   println!("{}", res.unwrap().text().unwrap());
   Some(("".to_string(), "".to_string()))
