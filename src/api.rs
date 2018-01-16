@@ -10,6 +10,7 @@ use self::crypto::mac::Mac;
 use self::url::percent_encoding::utf8_percent_encode;
 use self::url::percent_encoding::FORM_URLENCODED_ENCODE_SET;
 use self::uuid::Uuid;
+extern crate serde_urlencoded;
 
 pub fn token(ck: &str, cs: &str, sn: &str, pw: &str) -> Option<(String, String)> {
   let url = "https://api.twitter.com/oauth/access_token";
@@ -68,16 +69,15 @@ pub fn token(ck: &str, cs: &str, sn: &str, pw: &str) -> Option<(String, String)>
   let res = client
     .post(url)
     .header(hyper::header::Authorization(format!("OAuth {}", items)))
-    .json(&{
-      let mut map: HashMap<&str, &str> = HashMap::new();
-      for &(k, v) in &params {
-        map.insert(k, v);
-      }
-      map
-    })
+    .form(&params)
     .send();
-  println!("{}", res.unwrap().text().unwrap());
-  Some(("".to_string(), "".to_string()))
+  let result =
+    serde_urlencoded::from_str::<HashMap<String, String>>(&res.unwrap().text().unwrap()).unwrap();
+
+  Some((
+    result.get("oauth_token").unwrap().to_string(),
+    result.get("oauth_token_secret").unwrap().to_string(),
+  ))
 }
 
 fn url_encode(url: &str) -> String {

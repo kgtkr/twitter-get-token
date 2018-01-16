@@ -46,5 +46,14 @@ fn main() {
     let sn = matches.value_of("screen_name").unwrap();
     let pw = matches.value_of("password").unwrap();
 
-    api::token(ck, cs, sn, pw);
+    let token = api::token(ck, cs, sn, pw);
+    match token {
+        Option::Some((tk, ts)) => {
+            println!("tk={}", tk);
+            println!("ts={}", ts);
+        }
+        Option::None => {
+            println!("エラー");
+        }
+    }
 }
