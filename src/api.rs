@@ -71,12 +71,12 @@ pub fn token(ck: &str, cs: &str, sn: &str, pw: &str) -> Option<(String, String)>
     .header(hyper::header::Authorization(format!("OAuth {}", items)))
     .form(&params)
     .send();
-  let result =
-    serde_urlencoded::from_str::<HashMap<String, String>>(&res.unwrap().text().unwrap()).unwrap();
+
+  let result = serde_urlencoded::from_str::<HashMap<String, String>>(&res.ok()?.text().ok()?).ok()?;
 
   Some((
-    result.get("oauth_token").unwrap().to_string(),
-    result.get("oauth_token_secret").unwrap().to_string(),
+    result.get("oauth_token")?.to_string(),
+    result.get("oauth_token_secret")?.to_string(),
   ))
 }
 
