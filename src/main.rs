@@ -20,13 +20,16 @@ struct OAuthToken {
 fn main() -> Result<(), Box<std::error::Error>> {
     let config = toml::from_str::<Config>(&std::fs::read_to_string("config.toml")?)?;
     println!("screen name:");
-    let mut sn = String::new();
-    std::io::stdin().read_line(&mut sn)?;
-    let sn = sn;
+    let sn = {
+        let mut sn = String::new();
+        std::io::stdin().read_line(&mut sn)?;
+        sn.trim().to_string()
+    };
     println!("password:");
     let pw = rpassword::read_password()?;
-
     let (tk, ts) = token(&config.ck, &config.cs, &sn, &pw)?;
+
+    println!("# {}", sn);
     println!("tk=\"{}\"", tk);
     println!("ts=\"{}\"", ts);
 
@@ -98,7 +101,9 @@ fn token(
         .form(&params)
         .send();
 
-    let result = serde_urlencoded::from_str::<OAuthToken>(&res?.text()?)?;
+    let text = res?.text()?;
+
+    let result = serde_urlencoded::from_str::<OAuthToken>(&text)?;
 
     Ok((result.oauth_token, result.oauth_token_secret))
 }
