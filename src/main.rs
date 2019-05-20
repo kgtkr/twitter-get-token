@@ -1,59 +1,112 @@
-extern crate clap;
-use clap::{App, Arg};
-mod api;
-fn main() {
-    let app = App::new("get-twitter-token")
-        .version("0.1.0")
-        .author("tkr <kgtkr.jp@gmail.com>")
-        .about("Twitterのトークン取得")
-        .arg(
-            Arg::with_name("consumer_key")
-                .help("コンシューマーキー")
-                .long("consumer-key")
-                .visible_alias("ck")
-                .takes_value(true)
-                .required(true),
-        )
-        .arg(
-            Arg::with_name("consumer_secret")
-                .help("コンシューマーシークレット")
-                .long("consumer-secret")
-                .visible_alias("cs")
-                .takes_value(true)
-                .required(true),
-        )
-        .arg(
-            Arg::with_name("screen_name")
-                .help("スクリーンネーム")
-                .long("screen-name")
-                .short("s")
-                .takes_value(true)
-                .required(true),
-        )
-        .arg(
-            Arg::with_name("password")
-                .help("パスワード")
-                .long("password")
-                .short("p")
-                .takes_value(true)
-                .required(true),
-        );
+use crypto::mac::Mac;
+use serde_derive::Deserialize;
+use std::collections::HashMap;
 
-    let matches = app.get_matches();
+use url::percent_encoding::utf8_percent_encode;
+use url::percent_encoding::FORM_URLENCODED_ENCODE_SET;
+use uuid::Uuid;
 
-    let ck = matches.value_of("consumer_key").unwrap();
-    let cs = matches.value_of("consumer_secret").unwrap();
-    let sn = matches.value_of("screen_name").unwrap();
-    let pw = matches.value_of("password").unwrap();
+#[derive(Debug, Clone, Deserialize)]
+struct Config {
+    ck: String,
+    cs: String,
+}
 
-    let token = api::token(ck, cs, sn, pw);
-    match token {
-        Option::Some((tk, ts)) => {
-            println!("tk={}", tk);
-            println!("ts={}", ts);
-        }
-        Option::None => {
-            println!("エラー");
-        }
-    }
+fn main() -> Result<(), Box<std::error::Error>> {
+    let config = toml::from_str::<Config>(&std::fs::read_to_string("config.toml")?)?;
+    println!("screen name:");
+    let mut sn = String::new();
+    std::io::stdin().read_line(&mut sn)?;
+    let sn = sn;
+    println!("password:");
+    let pw = rpassword::read_password()?;
+
+    let (tk, ts) = token(&config.ck, &config.cs, &sn, &pw)?;
+    println!("tk=\"{}\"", tk);
+    println!("ts=\"{}\"", ts);
+
+    Ok(())
+}
+
+fn token(
+    ck: &str,
+    cs: &str,
+    sn: &str,
+    pw: &str,
+) -> Result<(String, String), Box<std::error::Error>> {
+    let url = "https://api.twitter.com/oauth/access_token";
+
+    let params = [
+        ("x_auth_mode", "client_auth"),
+        ("x_auth_password", pw),
+        ("x_auth_username", sn),
+    ];
+
+    let oauth = [
+        ("oauth_consumer_key", ck),
+        ("oauth_nonce", &Uuid::new_v4().to_string()),
+        ("oauth_signature_method", "HMAC-SHA1"),
+        (
+            "oauth_timestamp",
+            &chrono::Utc::now().timestamp().to_string(),
+        ),
+        ("oauth_token", ""),
+        ("oauth_version", "1.0a"),
+    ];
+
+    let key = vec![url_encode(cs), "".to_string()];
+
+    let base = &{
+        let mut v = vec![];
+        v.extend_from_slice(&oauth);
+        v.extend_from_slice(&params);
+        v
+    }[..];
+
+    let base_str = &base
+        .iter()
+        .map(|&(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    let encode_arr = vec!["POST".to_string(), url_encode(url), url_encode(base_str)];
+
+    let mut hmac = crypto::hmac::Hmac::new(crypto::sha1::Sha1::new(), key.join("&").as_bytes());
+    hmac.input(encode_arr.join("&").as_bytes());
+    let oauth_signature = base64::encode(&hmac.result().code());
+
+    let items = {
+        let mut v = vec![];
+        v.extend_from_slice(&oauth);
+        v.extend_from_slice(&[("oauth_signature", &oauth_signature)]);
+        v.iter()
+            .map(|&(k, v)| format!(r#"{}="{}""#, k, url_encode(v)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let client = reqwest::Client::new();
+
+    let res = client
+        .post(url)
+        .header(hyper::header::Authorization(format!("OAuth {}", items)))
+        .form(&params)
+        .send();
+
+    let result = serde_urlencoded::from_str::<HashMap<String, String>>(&res?.text()?)?;
+
+    Ok((
+        result
+            .get("oauth_token")
+            .ok_or("oauth_token not exist")?
+            .to_string(),
+        result
+            .get("oauth_token_secret")
+            .ok_or("oauth_token_secret not exist")?
+            .to_string(),
+    ))
+}
+
+fn url_encode(url: &str) -> String {
+    utf8_percent_encode(url, FORM_URLENCODED_ENCODE_SET)
 }
