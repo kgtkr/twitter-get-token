@@ -1,6 +1,5 @@
 use crypto::mac::Mac;
 use serde_derive::Deserialize;
-use std::collections::HashMap;
 
 use url::percent_encoding::utf8_percent_encode;
 use url::percent_encoding::FORM_URLENCODED_ENCODE_SET;
@@ -10,6 +9,12 @@ use uuid::Uuid;
 struct Config {
     ck: String,
     cs: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OAuthToken {
+    oauth_token: String,
+    oauth_token_secret: String,
 }
 
 fn main() -> Result<(), Box<std::error::Error>> {
@@ -93,18 +98,9 @@ fn token(
         .form(&params)
         .send();
 
-    let result = serde_urlencoded::from_str::<HashMap<String, String>>(&res?.text()?)?;
+    let result = serde_urlencoded::from_str::<OAuthToken>(&res?.text()?)?;
 
-    Ok((
-        result
-            .get("oauth_token")
-            .ok_or("oauth_token not exist")?
-            .to_string(),
-        result
-            .get("oauth_token_secret")
-            .ok_or("oauth_token_secret not exist")?
-            .to_string(),
-    ))
+    Ok((result.oauth_token, result.oauth_token_secret))
 }
 
 fn url_encode(url: &str) -> String {
