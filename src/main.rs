@@ -1,8 +1,7 @@
 use crypto::mac::Mac;
 use serde_derive::Deserialize;
 
-use url::percent_encoding::utf8_percent_encode;
-use url::percent_encoding::FORM_URLENCODED_ENCODE_SET;
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -17,7 +16,8 @@ struct OAuthToken {
     oauth_token_secret: String,
 }
 
-fn main() -> Result<(), Box<std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = toml::from_str::<Config>(&std::fs::read_to_string("config.toml")?)?;
     println!("screen name:");
     let sn = {
@@ -27,21 +27,20 @@ fn main() -> Result<(), Box<std::error::Error>> {
     };
     println!("password:");
     let pw = rpassword::read_password()?;
-    let (tk, ts) = token(&config.ck, &config.cs, &sn, &pw)?;
+    let (tk, ts) = token(&config.ck, &config.cs, &sn, &pw).await?;
 
     println!("# {}", sn);
     println!("tk=\"{}\"", tk);
     println!("ts=\"{}\"", ts);
-
     Ok(())
 }
 
-fn token(
+async fn token(
     ck: &str,
     cs: &str,
     sn: &str,
     pw: &str,
-) -> Result<(String, String), Box<std::error::Error>> {
+) -> Result<(String, String), Box<dyn std::error::Error>> {
     let url = "https://api.twitter.com/oauth/access_token";
 
     let params = [
@@ -97,11 +96,12 @@ fn token(
 
     let res = client
         .post(url)
-        .header(hyper::header::Authorization(format!("OAuth {}", items)))
+        .header(hyper::header::AUTHORIZATION, format!("OAuth {}", items))
         .form(&params)
-        .send();
+        .send()
+        .await?;
 
-    let text = res?.text()?;
+    let text = res.text().await?;
 
     let result = serde_urlencoded::from_str::<OAuthToken>(&text)?;
 
@@ -109,5 +109,5 @@ fn token(
 }
 
 fn url_encode(url: &str) -> String {
-    utf8_percent_encode(url, FORM_URLENCODED_ENCODE_SET)
+    utf8_percent_encode(url, NON_ALPHANUMERIC).to_string()
 }
