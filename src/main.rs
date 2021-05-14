@@ -1,8 +1,10 @@
 use crypto::mac::Mac;
 use serde_derive::Deserialize;
 
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use uuid::Uuid;
+
+const ENCODING_SET: &AsciiSet = &NON_ALPHANUMERIC.remove(b'_').remove(b'.').remove(b'-');
 
 #[derive(Debug, Clone, Deserialize)]
 struct Config {
@@ -57,46 +59,59 @@ async fn token(
             "oauth_timestamp",
             &chrono::Utc::now().timestamp().to_string(),
         ),
-        ("oauth_token", ""),
         ("oauth_version", "1.0a"),
     ];
 
-    let key = vec![url_encode(cs), "".to_string()];
+    let key = format!("{}&", cs);
 
-    let base = &{
+    let params_base = {
         let mut v = vec![];
         v.extend_from_slice(&oauth);
         v.extend_from_slice(&params);
         v
-    }[..];
+    };
 
-    let base_str = &base
+    let params_base_str = params_base
         .iter()
         .map(|&(k, v)| format!("{}={}", k, v))
         .collect::<Vec<_>>()
         .join("&");
 
-    let encode_arr = vec!["POST".to_string(), url_encode(url), url_encode(base_str)];
+    let base_str = format!(
+        "{}&{}&{}",
+        "POST",
+        url_encode(url),
+        url_encode(&params_base_str)
+    );
 
-    let mut hmac = crypto::hmac::Hmac::new(crypto::sha1::Sha1::new(), key.join("&").as_bytes());
-    hmac.input(encode_arr.join("&").as_bytes());
-    let oauth_signature = base64::encode(&hmac.result().code());
+    println!("{}", base_str);
 
-    let items = {
+    let oauth_signature = {
+        let mut hmac = crypto::hmac::Hmac::new(crypto::sha1::Sha1::new(), key.as_bytes());
+        hmac.input(base_str.as_bytes());
+        base64::encode(&hmac.result().code())
+    };
+
+    let oauth_header = {
         let mut v = vec![];
         v.extend_from_slice(&oauth);
-        v.extend_from_slice(&[("oauth_signature", &oauth_signature)]);
+        v.push(("oauth_signature", &oauth_signature));
         v.iter()
             .map(|&(k, v)| format!(r#"{}="{}""#, k, url_encode(v)))
             .collect::<Vec<_>>()
             .join(", ")
     };
 
+    println!("{}", oauth_header);
+
     let client = reqwest::Client::new();
 
     let res = client
         .post(url)
-        .header(hyper::header::AUTHORIZATION, format!("OAuth {}", items))
+        .header(
+            hyper::header::AUTHORIZATION,
+            format!("OAuth {}", oauth_header),
+        )
         .form(&params)
         .send()
         .await?;
@@ -109,5 +124,5 @@ async fn token(
 }
 
 fn url_encode(url: &str) -> String {
-    utf8_percent_encode(url, NON_ALPHANUMERIC).to_string()
+    utf8_percent_encode(url, ENCODING_SET).to_string()
 }
